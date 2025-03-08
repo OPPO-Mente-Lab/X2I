@@ -47,7 +47,7 @@ $ python inference.py
 ```
 
 It will download openbmb/MiniCPM-o-2_6, shuttleai/shuttle-3-diffusion.
-If you want use local model, you can inference like this:
+If you want to use local model, you can inference like this:
 
 ```shell
 $ python inference.py  --minicpm_path "local MiniCPM-o 2.6 path" --flux_path "local shuttle-3-diffusion or FLUX.1 schnell or FLUX.1 dev path"  --num_steps 4 --num_gen_imgs 1 --task "all"
