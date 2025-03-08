@@ -17,7 +17,7 @@
 <br>
 
 <div align="center">
-  <img src="assets/figures/intro.jpg" alt="X2I Framework" width="800">
+  <img src="assets/figures/intro.jpg" alt="X2I Framework">
 </div>
 
 ## Introduction
