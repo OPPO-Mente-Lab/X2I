@@ -15,7 +15,7 @@
 <br>
 <sup>1</sup>OPPO AI Center, <sup>2</sup>Tsinghua University
 <br>
-![framework](assets/figures/intro.png "framework")
+![framework](assets/figures/intro.jpg "framework")
 
 ## Introduction
 
