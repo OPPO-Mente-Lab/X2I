@@ -15,8 +15,9 @@
 <br>
 <sup>1</sup>OPPO AI Center, <sup>2</sup>Tsinghua University
 <br>
-![framework](assets/figures/intro.jpg "framework")
-
+> <div align="center">
+  <img src="assets/figures/intro.jpg" alt="X2I Framework" width="800">
+</div>
 ## Introduction
 
 The text-to-image models' capability to generate realistic images based on textual prompts and the multimodal understanding ability of Multimodal Language Models (MLLM) are well-recognized. However, there is currently a lack of a concise and efficient framework that transfers the multimodal understanding ability of MLLM to the T2I model, enabling it to comprehend multimodal inputs. In this paper, we design the X2I framework to endow Diffusion Transformer Models with MLLM's understanding abilities, encompassing information from various sources such as multilingual text, lengthy documents, OCR-generated content, images, videos, and audThe framework training is divided into two phases. In the first phase, alignment training requires only 20 hours with 8 A100 GPUs and uses a corpus of 100,000 purely English texts to distill the inference capabilities of the teacher model. Through our efficiently trained lightweight alignment network structure, our model not only retains the teacher model's text-to-image generation capabilities almost without loss but also acquires various multimodal understanding abilities. It can also perform certain image instruction editing and generation tasks. Furthermore, X2I can be utilized for lora training for text-to-image and image-to-image tasks, addressing a gap in the industry for this direction.In the second phase, a simple branch network is designed to enhance the fidelity of images generated during instruction editing. At the end of the first phase of training, we use extensive experiments to demonstrate the method's effectiveness, efficiency, versatility, and transferability.
@@ -123,7 +124,7 @@ $ bash train.sh
 ```
 
 ## TODO
-- The X2I weights and code based on qwen2.5vl 7B will be released soon.
+- The X2I weights and code based on Qwen2.5-VL 7B will be released soon.
 - ComfyUI tool is currently under development.
 
 
