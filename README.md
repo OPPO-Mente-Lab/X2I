@@ -15,7 +15,7 @@
 <br>
 <sup>1</sup>OPPO AI Center, <sup>2</sup>Tsinghua University
 <br>
-![Project Introduction](assets/figures/intro.png)
+![framework](assets/figures/intro.png "framework")
 
 ## Introduction
 
@@ -123,7 +123,7 @@ $ bash train.sh
 ```
 
 ## TODO
-- The X2I weights and code based on qwenvl2.5 7B will be released soon.
+- The X2I weights and code based on qwen2.5vl 7B will be released soon.
 - ComfyUI tool is currently under development.
 
 
