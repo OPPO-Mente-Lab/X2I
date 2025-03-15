@@ -1,6 +1,6 @@
 <div align="center">
   <h1>X2I</h1>
-[![Arxiv](https://img.shields.io/badge/ArXiv-2412.10493-%23840707.svg)](https://export.arxiv.org/abs/2503.06134)
+<a href='https://export.arxiv.org/abs/2503.06134'><img src='https://img.shields.io/badge/arXiv-2503.06134-b31b1b.svg'></a> &nbsp;
 </div>
 
 
@@ -32,7 +32,6 @@ The text-to-image models' capability to generate realistic images based on textu
 - [ ] ComfyUI
 
 ## Model Architecture
-
 ![framework](assets/figures/method.jpg "framework")
 ## Environment
 
