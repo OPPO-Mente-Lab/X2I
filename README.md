@@ -52,6 +52,12 @@ $ pip install transformers==4.48.0
 
 ## Inference
 
+X2I provides inference scripts for **QwenVL**, **InternVL**, and **MiniCPM** frameworks. The example demonstrates usage with MiniCPM-o-2_6 via [`inference_minicpm.py`](./inference_minicpm.py). For other models:
+
+- **Intern2.5VL-1Bor4B-** → use [`inference_internvl.py`](./inference_internvl.py)
+- **Qwen2.5VL-3Bor7B** → use [`inference_qwenvl.py`](./inference_qwenvl.py)
+
+All scripts follow analogous command patterns. Simply replace the script filename while maintaining consistent parameter configurations.
 ```shell
 $ python inference_minicpm.py
 ```
@@ -60,7 +66,7 @@ It will download openbmb/MiniCPM-o-2_6, shuttleai/shuttle-3-diffusion.
 If you want to use local model, you can inference like this:
 
 ```shell
-$ python inference.py  --minicpm_path "local MiniCPM-o 2.6 path" --flux_path "local shuttle-3-diffusion or FLUX.1 schnell or FLUX.1 dev path"  --num_steps 4 --num_gen_imgs 1 --task "all"
+$ python inference_minicpm.py  --minicpm_path "local MiniCPM-o 2.6 path" --flux_path "local shuttle-3-diffusion or FLUX.1 schnell or FLUX.1 dev path"  --num_steps 4 --num_gen_imgs 1 --task "all"
 ```
 - **minicpm_path:** The path of MiniCPM-o 2.6, default: `openbmb/MiniCPM-o-2_6`
 - **flux_path:** The path of FLUX.1 schnell or FLUX.1 dev or shuttle-3-diffusion, default: `shuttleai/shuttle-3-diffusion`
@@ -74,7 +80,7 @@ X2I supports generating images in multiple languages. <br/>
 You can run the text2image task like this:
 
 ```shell
-$ python inference.py  --minicpm_path "local MiniCPM-o 2.6 path" --flux_path "local shuttle-3-diffusion or FLUX.1 schnell or FLUX.1 dev path"  --num_steps 4 --num_gen_imgs 1 --task "text2image"
+$ python inference_minicpm.py  --minicpm_path "local MiniCPM-o 2.6 path" --flux_path "local shuttle-3-diffusion or FLUX.1 schnell or FLUX.1 dev path"  --num_steps 4 --num_gen_imgs 1 --task "text2image"
 ```
 
 ### Image2image
@@ -84,7 +90,7 @@ You can run the image2image task like this:
 
 
 ```shell
-$ python inference.py  --minicpm_path "local MiniCPM-o 2.6 path" --flux_path "local shuttle-3-diffusion or FLUX.1 schnell or FLUX.1 dev path"  --num_steps 4 --num_gen_imgs 1 --task "image2image"
+$ python inference_minicpm.py  --minicpm_path "local MiniCPM-o 2.6 path" --flux_path "local shuttle-3-diffusion or FLUX.1 schnell or FLUX.1 dev path"  --num_steps 4 --num_gen_imgs 1 --task "image2image"
 ```
 
 
@@ -94,7 +100,7 @@ X2I supports user-prompt-driven expression editing, along with single image or m
 You can run the imagetext2image task like this:
 
 ```shell
-$ python inference.py  --minicpm_path "local MiniCPM-o 2.6 path" --flux_path "local shuttle-3-diffusion or FLUX.1 schnell or FLUX.1 dev path"  --num_steps 4 --num_gen_imgs 1 --task "imagetext2image"
+$ python inference_minicpm.py  --minicpm_path "local MiniCPM-o 2.6 path" --flux_path "local shuttle-3-diffusion or FLUX.1 schnell or FLUX.1 dev path"  --num_steps 4 --num_gen_imgs 1 --task "imagetext2image"
 ```
 
 ### Video2image
@@ -103,7 +109,7 @@ X2I can directly generate images based on the semantic content of input video se
 You can run the video2image task like this:
 
 ```shell
-$ python inference.py  --minicpm_path "local MiniCPM-o 2.6 path" --flux_path "local shuttle-3-diffusion or FLUX.1 schnell or FLUX.1 dev path"  --num_steps 4 --num_gen_imgs 1 --task "video2image"
+$ python inference_minicpm.py  --minicpm_path "local MiniCPM-o 2.6 path" --flux_path "local shuttle-3-diffusion or FLUX.1 schnell or FLUX.1 dev path"  --num_steps 4 --num_gen_imgs 1 --task "video2image"
 ```
 
 ### Audio2image
@@ -112,7 +118,7 @@ Leveraging the audio comprehension capabilities of MLLMs such as MiniCPM-o, X2I 
 You can run the audio2image task like this:
 
 ```shell
-$ python inference.py  --minicpm_path "local MiniCPM-o 2.6 path" --flux_path "local shuttle-3-diffusion or FLUX.1 schnell or FLUX.1 dev path"  --num_steps 4 --num_gen_imgs 1 --task "audio2image"
+$ python inference_minicpm.py  --minicpm_path "local MiniCPM-o 2.6 path" --flux_path "local shuttle-3-diffusion or FLUX.1 schnell or FLUX.1 dev path"  --num_steps 4 --num_gen_imgs 1 --task "audio2image"
 ```
 
 ### X2image
@@ -122,7 +128,7 @@ You can run the x2image task like this:
 
 
 ```shell
-$ python inference.py  --minicpm_path "local MiniCPM-o 2.6 path" --flux_path "local shuttle-3-diffusion or FLUX.1 schnell or FLUX.1 dev path"  --num_steps 4 --num_gen_imgs 1 --task "x2image"
+$ python inference_minicpm.py  --minicpm_path "local MiniCPM-o 2.6 path" --flux_path "local shuttle-3-diffusion or FLUX.1 schnell or FLUX.1 dev path"  --num_steps 4 --num_gen_imgs 1 --task "x2image"
 ```
 
 
