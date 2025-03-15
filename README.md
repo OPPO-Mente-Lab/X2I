@@ -1,6 +1,7 @@
 <div align="center">
   <h1>X2I</h1>
 <a href='https://export.arxiv.org/abs/2503.06134'><img src='https://img.shields.io/badge/arXiv-2503.06134-b31b1b.svg'></a> &nbsp;
+<a href='https://huggingface.co/OPPOer/X2I'><img src='https://img.shields.io/badge/🤗%20HuggingFace-X2I-ffd21f.svg'></a>
 </div>
 
 
