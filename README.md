@@ -26,10 +26,10 @@
 The text-to-image models' capability to generate realistic images based on textual prompts and the multimodal understanding ability of Multimodal Language Models (MLLM) are well-recognized. However, there is currently a lack of a concise and efficient framework that transfers the multimodal understanding ability of MLLM to the T2I model, enabling it to comprehend multimodal inputs. In this paper, we design the X2I framework to endow Diffusion Transformer Models with MLLM's understanding abilities, encompassing information from various sources such as multilingual text, lengthy documents, OCR-generated content, images, videos, and audio. The framework training is divided into two phases. In the first phase, alignment training requires only 20 hours with 8 A100 GPUs and uses a corpus of 100,000 purely English texts to distill the inference capabilities of the teacher model. Through our efficiently trained lightweight alignment network structure, our model not only retains the teacher model's text-to-image generation capabilities almost without loss but also acquires various multimodal understanding abilities. It can also perform certain image instruction editing and generation tasks. Furthermore, X2I can be utilized for lora training for text-to-image and image-to-image tasks, addressing a gap in the industry for this direction.In the second phase, a simple branch network is designed to enhance the fidelity of images generated during instruction editing. At the end of the first phase of training, we use extensive experiments to demonstrate the method's effectiveness, efficiency, versatility, and transferability.
 
 ## TODO
-- [x] Release training and inference code of MiniCPM-o 2.6
+- [x] Release training and inference code of MiniCPM-o-2.6
 - [x] Release training and inference code of QwenVL-2.5
 - [x] Release training and inference code of InternVL-2.5
-- [x] Release checkpoints
+- [x] Release checkpoints on [huggingface](https://huggingface.co/OPPOer/X2I)
 - [ ] ComfyUI
 
 ## Model Architecture
@@ -130,7 +130,13 @@ You can run the x2image task like this:
 ```shell
 $ python inference_minicpm.py  --minicpm_path "local MiniCPM-o 2.6 path" --flux_path "local shuttle-3-diffusion or FLUX.1 schnell or FLUX.1 dev path"  --num_steps 4 --num_gen_imgs 1 --task "x2image"
 ```
+### Answer2image
+X2I also supports image generation using the answers obtained after MLLM inference.
 
+You can run the answer2image like this:
+```shell
+$ python inference_qwenvl.py --use_answer True --task "all"
+```
 
 ## Train
 We organize the dataset using the **[WebDataset](https://github.com/webdataset/webdataset)** format. 
@@ -151,7 +157,12 @@ Then you can run:
      ```shell
      bash train_internvl.sh
      ```
-
-
+## Acknowledgements 
+This code is builds on the code from the [diffusers](https://github.com/huggingface/diffusers), 
+[MiniCPM-o](https://github.com/OpenBMB/MiniCPM-o),
+[InternVL](https://github.com/OpenGVLab/InternVL),
+[QwenVL](https://github.com/QwenLM/Qwen-VL),
+[PEA-Diffusion](https://github.com/OPPO-Mente-Lab/PEA-Diffusion), and 
+[Subject-Diffusion](https://github.com/OPPO-Mente-Lab/Subject-Diffusion).
 
 
