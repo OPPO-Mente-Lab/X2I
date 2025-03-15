@@ -32,6 +32,16 @@ The text-to-image models' capability to generate realistic images based on textu
 - [x] Release checkpoints on [huggingface](https://huggingface.co/OPPOer/X2I)
 - [ ] ComfyUI
 
+## Model Zoo Table
+
+| Model              |                                    Checkpoints                                     |
+|:-------------------|:----------------------------------------------------------------------------------:|
+| X2I-MiniCPM-o-2.6  |                  [Checkpoints](https://huggingface.co/OPPOer/X2I)                  | 
+| X2I-InternVL2.5-1B |                  [Checkpoints](https://huggingface.co/OPPOer/X2I)                  | 
+| X2I-InternVL2.5-4B |                  [Checkpoints](https://huggingface.co/OPPOer/X2I)                  | 
+| X2I-QwenVL2.5-3B   |                  [Checkpoints](https://huggingface.co/OPPOer/X2I)                  |  
+| X2I-QwenVL2.5-7B   |                  [Checkpoints](https://huggingface.co/OPPOer/X2I)                  |  
+
 ## Model Architecture
 ![framework](assets/figures/method.jpg "framework")
 ## Environment
@@ -131,8 +141,7 @@ You can run the x2image task like this:
 $ python inference_minicpm.py  --minicpm_path "local MiniCPM-o 2.6 path" --flux_path "local shuttle-3-diffusion or FLUX.1 schnell or FLUX.1 dev path"  --num_steps 4 --num_gen_imgs 1 --task "x2image"
 ```
 ### Answer2image
-X2I also supports image generation using the answers obtained after MLLM inference.
-
+X2I also supports image generation using the answers obtained after MLLM inference.<br/>
 You can run the answer2image like this:
 ```shell
 $ python inference_qwenvl.py --use_answer True --task "all"
