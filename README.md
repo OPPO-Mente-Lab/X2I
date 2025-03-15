@@ -36,11 +36,11 @@ The text-to-image models' capability to generate realistic images based on textu
 
 | Model              |                                    Checkpoints                                     |
 |:-------------------|:----------------------------------------------------------------------------------:|
-| X2I-MiniCPM-o-2.6  |                  [Checkpoints](https://huggingface.co/OPPOer/X2I)                  | 
-| X2I-InternVL2.5-1B |                  [Checkpoints](https://huggingface.co/OPPOer/X2I)                  | 
-| X2I-InternVL2.5-4B |                  [Checkpoints](https://huggingface.co/OPPOer/X2I)                  | 
-| X2I-QwenVL2.5-3B   |                  [Checkpoints](https://huggingface.co/OPPOer/X2I)                  |  
-| X2I-QwenVL2.5-7B   |                  [Checkpoints](https://huggingface.co/OPPOer/X2I)                  |  
+| X2I-MiniCPM-o-2.6  |                  [Checkpoints](https://huggingface.co/OPPOer/X2I/tree/main)                  | 
+| X2I-InternVL2.5-1B |                  [Checkpoints](https://huggingface.co/OPPOer/X2I/tree/main)                  | 
+| X2I-InternVL2.5-4B |                  [Checkpoints](https://huggingface.co/OPPOer/X2I/tree/main)                  | 
+| X2I-QwenVL2.5-3B   |                  [Checkpoints](https://huggingface.co/OPPOer/X2I/tree/main)                  |  
+| X2I-QwenVL2.5-7B   |                  [Checkpoints](https://huggingface.co/OPPOer/X2I/tree/main)                  |  
 
 ## Model Architecture
 ![framework](assets/figures/method.jpg "framework")
