@@ -1,7 +1,7 @@
 <div align="center">
   <h1>X2I</h1>
+[![Arxiv](https://img.shields.io/badge/ArXiv-2412.10493-%23840707.svg)](https://export.arxiv.org/abs/2503.06134)
 </div>
-
 
 
 > **X2I: Seamless Integration of Multimodal Understanding into Diffusion Transformer via Attention Distillation**
@@ -70,7 +70,7 @@ $ python inference.py  --minicpm_path "local MiniCPM-o 2.6 path" --flux_path "lo
 
 ### Text2image
 
-Supports generating images in multiple languages. <br/>
+X2I supports generating images in multiple languages. <br/>
 You can run the text2image task like this:
 
 ```shell
@@ -79,7 +79,7 @@ $ python inference.py  --minicpm_path "local MiniCPM-o 2.6 path" --flux_path "lo
 
 ### Image2image
 
-MLLM empowers X2I with the capability to understand  both single and multiple images, enabling it to perform reference-guided image generation, celebrity, and multi-image composition tasks. <br/>
+X2I supports reference-guided image generation, celebrity, and multi-image composition tasks. <br/>
 You can run the image2image task like this:
 
 
@@ -90,7 +90,7 @@ $ python inference.py  --minicpm_path "local MiniCPM-o 2.6 path" --flux_path "lo
 
 ### Imagetext2image
 
-X2I demonstrates capabilities including user-prompt-driven expression editing, along with single image or multi-image editing and fusion tasks illustrated. Furthermore, leveraging MLLM’s robust OCR capacity, the system generates images through direct interpre1tation of visual content in input images while supporting multilingual visual generation. <br/>
+X2I supports user-prompt-driven expression editing, along with single image or multi-image editing and fusion tasks. Furthermore, X2I support image generation based on multilingual text content in images. <br/>
 You can run the imagetext2image task like this:
 
 ```shell
@@ -99,7 +99,7 @@ $ python inference.py  --minicpm_path "local MiniCPM-o 2.6 path" --flux_path "lo
 
 ### Video2image
 
-MLLM possesses video comprehension capabilities that enable X2I to directly generate images based on the semantic content of input video sequences. <br/>
+X2I can directly generate images based on the semantic content of input video sequences. <br/>
 You can run the video2image task like this:
 
 ```shell
@@ -108,7 +108,7 @@ $ python inference.py  --minicpm_path "local MiniCPM-o 2.6 path" --flux_path "lo
 
 ### Audio2image
 
-Leveraging the audio comprehension capabilities of MLLMs such as MiniCPM-o, after alignment, X2I can directly generate images based on music with lyrics, instrumental music, and natural sounds. All audio inputs in these examples directly condition X2I’s image generation without preprocessing. <br/>
+Leveraging the audio comprehension capabilities of MLLMs such as MiniCPM-o, X2I can directly generate images based on audio.<br/>
 You can run the audio2image task like this:
 
 ```shell
@@ -117,7 +117,7 @@ $ python inference.py  --minicpm_path "local MiniCPM-o 2.6 path" --flux_path "lo
 
 ### X2image
 
-X2I can comprehend hybrid inputs combining audio, images, videos, and text prompts to generate images. Moreover, when the same video is used as a prompt, accompanying it with music produces distinct effects, demonstrating X2I’s comprehension of multimodal prompts. <br/>
+X2I can comprehend hybrid inputs combining audio, images, videos, and text prompts to generate images.<br/>
 You can run the x2image task like this:
 
 
