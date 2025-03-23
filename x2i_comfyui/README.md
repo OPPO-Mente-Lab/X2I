@@ -5,7 +5,7 @@
 Put `x2i_comfyui` to `ComfyUI/custom_nodes`, and run the following commands to install dependencies.
 
 ```shell
-cd ComfyUI/custom_nodes/x2i_comfyui
+cd x2i_comfyui
 
 pip install -r requirements.txt
 ```

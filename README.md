@@ -21,9 +21,18 @@
   <img src="assets/figures/intro.jpg" alt="X2I Framework">
 </div>
 
-## Introduction
+## Abstract
+<b>Powered by MLLM, our X2I acquires the ability to process multimodal inputs (text/image/video/audio) and generate corresponding images.</b>
 
-The text-to-image models' capability to generate realistic images based on textual prompts and the multimodal understanding ability of Multimodal Language Models (MLLM) are well-recognized. However, there is currently a lack of a concise and efficient framework that transfers the multimodal understanding ability of MLLM to the T2I model, enabling it to comprehend multimodal inputs. In this paper, we design the X2I framework to endow Diffusion Transformer Models with MLLM's understanding abilities, encompassing information from various sources such as multilingual text, lengthy documents, OCR-generated content, images, videos, and audio. The framework training is divided into two phases. In the first phase, alignment training requires only 20 hours with 8 A100 GPUs and uses a corpus of 100,000 purely English texts to distill the inference capabilities of the teacher model. Through our efficiently trained lightweight alignment network structure, our model not only retains the teacher model's text-to-image generation capabilities almost without loss but also acquires various multimodal understanding abilities. It can also perform certain image instruction editing and generation tasks. Furthermore, X2I can be utilized for lora training for text-to-image and image-to-image tasks, addressing a gap in the industry for this direction.In the second phase, a simple branch network is designed to enhance the fidelity of images generated during instruction editing. At the end of the first phase of training, we use extensive experiments to demonstrate the method's effectiveness, efficiency, versatility, and transferability.
+<details><summary>CLICK for full abstract</summary>
+>The text-to-image models' capability to generate realistic images based on textual prompts and the multimodal understanding ability of Multimodal Language Models (MLLM) are well-recognized. However, there is currently a lack of a concise and efficient framework that transfers the multimodal understanding ability of MLLM to the T2I model, enabling it to comprehend multimodal inputs. In this paper, we design the X2I framework to endow Diffusion Transformer Models with MLLM's understanding abilities, encompassing information from various sources such as multilingual text, lengthy documents, OCR-generated content, images, videos, and audio. The framework training is divided into two phases. In the first phase, alignment training requires only 20 hours with 8 A100 GPUs and uses a corpus of 100,000 purely English texts to distill the inference capabilities of the teacher model. Through our efficiently trained lightweight alignment network structure, our model not only retains the teacher model's text-to-image generation capabilities almost without loss but also acquires various multimodal understanding abilities. It can also perform certain image instruction editing and generation tasks. Furthermore, X2I can be utilized for lora training for text-to-image and image-to-image tasks, addressing a gap in the industry for this direction.In the second phase, a simple branch network is designed to enhance the fidelity of images generated during instruction editing. At the end of the first phase of training, we use extensive experiments to demonstrate the method's effectiveness, efficiency, versatility, and transferability.
+</details>
+
+## Changelog
+- **[2025.03.23]** 🔥 🔥 🔥 We release the [X2I-Comfyui](https://github.com/OPPO-Mente-Lab/X2I/tree/main/x2i_comfyui). Try it now! Please give us a star!
+- **[2025.03.15]** 🔥 Release checkpoints on huggingface!
+- **[2025.03.08]** 🔥 Release training and inference code!
+- **[2025.03.08]** 🔥 Release our Paper!
 
 ## TODO
 - [x] Release training and inference code of MiniCPM-o-2.6
