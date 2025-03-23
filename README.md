@@ -140,12 +140,25 @@ You can run the x2image task like this:
 ```shell
 $ python inference_minicpm.py  --minicpm_path "local MiniCPM-o 2.6 path" --flux_path "local shuttle-3-diffusion or FLUX.1 schnell or FLUX.1 dev path"  --num_steps 4 --num_gen_imgs 1 --task "x2image"
 ```
-### Answer2image
-X2I also supports image generation using the answers obtained after MLLM inference.<br/>
-You can run the answer2image like this:
+### Reasoning2image
+X2I also supports image generation using MLLM's reasoning capabilities based on the answers obtained after reasoning.<br/>
+You can run the reasoning2image like this:
 ```shell
 $ python inference_qwenvl.py --use_answer True --task "all"
 ```
+<div align="center">
+  <img src="assets/figures/reasoning.png" alt="X2I Framework">
+</div>
+
+### Multi-turn2image
+Equipped with multi-turn dialogue capabilities inherent in MLLMs, X2I demonstrates preserved fidelity and contextual coherence during conversational interactions, as illustrated in the figure below.<br/>
+You can run the multi-turn2image like this:
+```shell
+$ python inference_multi_turn.py
+```
+<div align="center">
+  <img src="assets/figures/multi_turn.png" alt="X2I Framework">
+</div>
 
 ## Train
 We organize the dataset using the **[WebDataset](https://github.com/webdataset/webdataset)** format. 
