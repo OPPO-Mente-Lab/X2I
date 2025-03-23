@@ -30,7 +30,7 @@ The text-to-image models' capability to generate realistic images based on textu
 - [x] Release training and inference code of QwenVL-2.5
 - [x] Release training and inference code of InternVL-2.5
 - [x] Release checkpoints on [huggingface](https://huggingface.co/OPPOer/X2I)
-- [ ] ComfyUI
+- [x] ComfyUI
 
 ## Model Zoo Table
 
