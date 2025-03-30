@@ -31,20 +31,15 @@ import diffusers
 from diffusers.optimization import get_scheduler
 from diffusers.utils.torch_utils import is_compiled_module,randn_tensor
 
-from utils.datamodule_minicpm import DataModuleCustom
+from utils.datamodule_qwenvl import DataModuleCustom
 
-from transformers.models.qwen2.tokenization_qwen2 import Qwen2Tokenizer
-from proj import create_proj_minicpm
+from utils.proj import create_proj3_qwen3b, create_proj3_qwen7b
 
-
+from transformers import Qwen2_5_VLForConditionalGeneration
 from typing import Callable, List, Optional, Union
 from transformers import T5Tokenizer,MT5EncoderModel,AutoModel,AutoModelForCausalLM
 from transformers import CLIPTextModel, CLIPTextModelWithProjection, CLIPTokenizer
 from transformers import T5EncoderModel, T5TokenizerFast, CLIPTokenizer, CLIPTextModel,T5ForConditionalGeneration,AutoProcessor
-
-from minicpm.modeling_minicpmo import MiniCPMO
-from minicpm.processing_minicpmo import MiniCPMOProcessor
-from minicpm.tokenization_minicpmo_fast import MiniCPMOTokenizerFast
 
 from diffusers.schedulers import FlowMatchEulerDiscreteScheduler
 from diffusers.models.transformers import FluxTransformer2DModel
@@ -110,12 +105,13 @@ def parse_args(input_args=None):
     parser.add_argument(
         "--resume_from_checkpoint",
         type=str,
-        default=None,
+        default = None,
         help=(
             "Whether training should be resumed from a previous checkpoint. Use a path saved by"
             ' `--checkpointing_steps`, or `"latest"` to automatically select the last available checkpoint.'
         ),
     )
+    parser.add_argument('--qwen_size', type=str, choices=['3b', '7b'], help="Model size selection (3b/7b)")
     parser.add_argument(
         "--gradient_accumulation_steps",
         type=int,
@@ -207,7 +203,6 @@ def get_max_numbered_filename(directory):
     return max(numbers) if numbers else None
 
 
-		
 def cast_hook_list(unet, lists):
     lists.append([])
     lists.append([])
@@ -237,7 +232,6 @@ def _pack_latents(latents, batch_size, num_channels_latents, height, width):
     latents = latents.reshape(batch_size, (height // 2) * (width // 2), num_channels_latents * 4)
 
     return latents
-
 
 def calculate_shift(
     image_seq_len,
@@ -288,7 +282,6 @@ def retrieve_timesteps(
 
 
 
-
 class InferPreprocess(Preprocess):
 
     def __init__(self, infer_pg, is_infer_rank, batch_size, infer_rank):
@@ -304,31 +297,27 @@ class InferPreprocess(Preprocess):
         train_device = "cuda"
         weight_dtype = torch.bfloat16
 
-        # pixel_values = batch["pixel_values"].to(device=train_device)
+        
         input_ids_t5_en = batch["input_ids_t5_en"].to(device=train_device)
         input_ids_en = batch["input_ids_en"].to(device=train_device)
         input_ids_t5 = batch["input_ids_t5"].to(device=train_device)
         attention_mask = batch["attention_mask"].to(device=train_device)
         # image_grid_thw = batch["image_grid_thw"].to(device=train_device)
+        # pixel_values = batch["pixel_values"].to(device=train_device)
 
-        # 将训练卡的batch数据发送到推理卡上
-        # print(f"input_ids_t5_en: {input_ids_t5_en.shape}")
-        # print(f"input_ids_en: {input_ids_en.shape}")
-        # print(f"input_ids_t5: {input_ids_t5.shape}, input_ids_t5.dtype: {input_ids_t5.dtype}")
-        # print(f"attention_mask: {attention_mask.shape}, attention_mask.dtype: {attention_mask.dtype}")
+        # Send the batch data of the training gpu to the infer gpu
         torch.cuda.synchronize()
         tai.send_to_infer_device(input_ids_t5_en, self.infer_pg, self.is_infer_rank, self.infer_rank)
         torch.cuda.synchronize()
-        # print(f"xxxxxx finish input_ids_t5_en")
         tai.send_to_infer_device(input_ids_en, self.infer_pg, self.is_infer_rank, self.infer_rank)
         torch.cuda.synchronize()
-        # print(f"xxxxxx finish input_ids_en")
+
         tai.send_to_infer_device(input_ids_t5, self.infer_pg, self.is_infer_rank, self.infer_rank)
         torch.cuda.synchronize()
-        # print(f"xxxxxx finish input_ids_t5")
+       
         tai.send_to_infer_device(attention_mask, self.infer_pg, self.is_infer_rank, self.infer_rank)
         torch.cuda.synchronize()
-        # print(f"xxxxxx finish attention_mask")
+  
         # tai.send_to_infer_device(pixel_values, self.infer_pg, self.is_infer_rank, self.infer_rank)
         # tai.send_to_infer_device(image_grid_thw, self.infer_pg, self.is_infer_rank, self.infer_rank)
 
@@ -337,29 +326,33 @@ class InferPreprocess(Preprocess):
         KD_teacher_tensor2 = torch.zeros((self.bsz_org, 38, 4608, 3072), dtype=weight_dtype, device=train_device)
         
         latents = torch.zeros((self.bsz_org, 4096, 64), dtype=weight_dtype, device=train_device)
-        text_embeddings = torch.zeros((self.bsz_org, 29, 512, 3584),dtype=weight_dtype,  device=train_device)
+        
+        if args.qwen_size == "3b":
+            text_embeddings = torch.zeros((self.bsz_org, 37, 512, 2048),dtype=weight_dtype,  device=train_device)
+        if args.qwen_size == "7b":
+            text_embeddings = torch.zeros((self.bsz_org, 29, 512, 3584),dtype=weight_dtype,  device=train_device)
         timestep = torch.zeros((self.bsz_org), dtype=torch.bfloat16,  device=train_device)
         torch.cuda.synchronize()
 
-        # 从推理卡获取推理结果
+        # Get infer results from infer gpu
         KD_teacher_tensor0 = tai.receive_from_infer_device(KD_teacher_tensor0, self.infer_pg, self.is_infer_rank, self.infer_rank)
         torch.cuda.synchronize()
-        # print(f"xxxxxx finish KD_teacher_tensor0")
+ 
         KD_teacher_tensor1 = tai.receive_from_infer_device(KD_teacher_tensor1, self.infer_pg, self.is_infer_rank, self.infer_rank)
         torch.cuda.synchronize()
-        # print(f"xxxxxx finish KD_teacher_tensor1")
+       
         KD_teacher_tensor2 = tai.receive_from_infer_device(KD_teacher_tensor2, self.infer_pg, self.is_infer_rank, self.infer_rank)
         torch.cuda.synchronize()
-        # print(f"xxxxxx finish KD_teacher_tensor2")
+     
         latents = tai.receive_from_infer_device(latents, self.infer_pg, self.is_infer_rank, self.infer_rank)
         torch.cuda.synchronize()
-        # print(f"xxxxxx finish latents")
+      
         text_embeddings = tai.receive_from_infer_device(text_embeddings, self.infer_pg, self.is_infer_rank, self.infer_rank)
         torch.cuda.synchronize()
-        # print(f"xxxxxx finish text_embeddings")
+   
         timestep = tai.receive_from_infer_device(timestep, self.infer_pg, self.is_infer_rank, self.infer_rank)
         torch.cuda.synchronize()
-        # print(f"xxxxxx finish timestep")
+ 
         batch["KD_teacher_tensor0"] = KD_teacher_tensor0
         batch["KD_teacher_tensor1"] = KD_teacher_tensor1
         batch["KD_teacher_tensor2"] = KD_teacher_tensor2
@@ -392,7 +385,7 @@ def train(args, infer_pg, is_infer_rank, train_pg, group_rank, infer_rank,teache
         transformers.utils.logging.set_verbosity_error()
         diffusers.utils.logging.set_verbosity_error()
 
-    # Handle the repository creation
+  
     if is_main_process:
         if args.output_dir is not None:
             os.makedirs(args.output_dir, exist_ok=True)
@@ -401,8 +394,11 @@ def train(args, infer_pg, is_infer_rank, train_pg, group_rank, infer_rank,teache
     scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(teacher, subfolder="scheduler")
     torch.cuda.synchronize()
 
-    tokenizer_mllm = MiniCPMOProcessor.from_pretrained(paths, trust_remote_code=True)
-    proj_t5 = create_proj_minicpm(in_channels=29, use_t5=False, use_scale=False, use_cnn=True).to(dtype=weight_dtype)
+    tokenizer_mllm = AutoProcessor.from_pretrained(paths, padding_side='left', trust_remote_code=True)
+    if args.qwen_size == "3b":
+        proj_t5 = create_proj3_qwen3b(in_channels=37, use_t5=False, use_scale=False, use_cnn=True).to(dtype=weight_dtype)
+    if args.qwen_size == "7b":
+        proj_t5 = create_proj3_qwen7b(in_channels=29, use_t5=False, use_scale=False, use_cnn=True).to(dtype=weight_dtype)
 
     # Get the most recent checkpoint
     last_checkpoint_step = get_max_numbered_filename(args.output_dir)
@@ -418,24 +414,24 @@ def train(args, infer_pg, is_infer_rank, train_pg, group_rank, infer_rank,teache
 
     
     torch.cuda.synchronize()
-    # print(f"rank: {rank}, will load flux transformer")
-    transformer = FluxTransformer2DModel.from_pretrained(teacher, subfolder="transformer")
+    transformer_student = FluxTransformer2DModel.from_pretrained(teacher, subfolder="transformer")
     torch.cuda.synchronize()
 
-    transformer.eval()
-    transformer.requires_grad_(False)
+
+    transformer_student.eval()
+    transformer_student.requires_grad_(False)
     proj_t5.train()
 
     torch.cuda.synchronize()
 
 
     
-    transformer.to(train_device, dtype=weight_dtype)
+    transformer_student.to(train_device, dtype=weight_dtype)
     proj_t5.to(train_device)
 
     
     KD_student= []
-    cast_hook_list(transformer,KD_student)
+    cast_hook_list(transformer_student,KD_student)
 
     # Use 8-bit Adam for lower memory usage or to fine-tune the model in 16GB GPUs
     if args.use_8bit_adam:
@@ -486,13 +482,15 @@ def train(args, infer_pg, is_infer_rank, train_pg, group_rank, infer_rank,teache
     print(f"train finish init lr_scheduler")
     proj_t5 = DistributedDataParallel(proj_t5, process_group=train_pg, find_unused_parameters=True)
     print(f"train finish accelerator.prepare")
-
+    
     if overrode_max_train_steps:
         args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
-
+    # Afterwards we recalculate our number of training epochs
     args.num_train_epochs = math.ceil(args.max_train_steps / num_update_steps_per_epoch)
 
 
+
+    ############## Train!
     total_batch_size = args.batch_size * dist.get_world_size(train_pg) * args.gradient_accumulation_steps
     if is_main_process:
         print("***** Running training *****")
@@ -505,7 +503,7 @@ def train(args, infer_pg, is_infer_rank, train_pg, group_rank, infer_rank,teache
     first_epoch = 0
 
     # Potentially load in the weights and states from a previous save
-    if args.resume_from_checkpoint:
+    if args.resume_from_checkpoint is not None:
         if args.resume_from_checkpoint != "latest":
             path = os.path.basename(args.resume_from_checkpoint)
         else:
@@ -545,11 +543,7 @@ def train(args, infer_pg, is_infer_rank, train_pg, group_rank, infer_rank,teache
         disable=not is_local_main_process,
     )
 
-
-    # torch.distributed.distributed_c10d.GroupMember.WORLD = default_pg
-
     bsz_org = args.batch_size
-    # bsz = (dist.get_world_size(infer_pg) - 1) * bsz_org
     height = 128
     width = 128
     seq_len = 512
@@ -565,10 +559,12 @@ def train(args, infer_pg, is_infer_rank, train_pg, group_rank, infer_rank,teache
         for step, batch in enumerate(train_dataloader):
 
             sync_gradients = step % args.gradient_accumulation_steps == 0
+
+            # pixel_values = batch["pixel_values"].to(device=train_device,dtype=weight_dtype)
             input_ids_t5_en = batch["input_ids_t5_en"].to(device=train_device)
             input_ids_en = batch["input_ids_en"].to(device=train_device)
             input_ids_t5 = batch["input_ids_t5"].to(device=train_device)
-   
+
             KD_teacher_tensor0 = batch["KD_teacher_tensor0"].to(device=train_device)
             KD_teacher_tensor1 = batch["KD_teacher_tensor1"].to(device=train_device)
             KD_teacher_tensor2 = batch["KD_teacher_tensor2"].to(device=train_device)
@@ -579,15 +575,14 @@ def train(args, infer_pg, is_infer_rank, train_pg, group_rank, infer_rank,teache
 
             add_text_embeds, prompt_embeds_zh = proj_t5(text_embeddings)
 
-            # timestep = timesteps[0].expand(batch_size).to(device=train_device, dtype=transformer.dtype)
-            noise_pred = transformer(
+            noise_pred_student = transformer_student(
                 hidden_states=latents.to(train_device),
                 timestep=timestep / 1000,
                 txt_ids=text_ids.to(train_device),
                 guidance=guidance,
                 img_ids=latent_image_ids.to(train_device),
-                encoder_hidden_states=prompt_embeds_zh.to(device=train_device, dtype=transformer.dtype),  # b*512*4096
-                pooled_projections=add_text_embeds.to(device=train_device, dtype=transformer.dtype), # b*768
+                encoder_hidden_states=prompt_embeds_zh.to(device=train_device, dtype=transformer_student.dtype),  # b*512*4096
+                pooled_projections=add_text_embeds.to(device=train_device, dtype=transformer_student.dtype), # b*768
                 return_dict=False,
             )[0]
 
@@ -598,7 +593,7 @@ def train(args, infer_pg, is_infer_rank, train_pg, group_rank, infer_rank,teache
             KD_student[0].clear()
             KD_student[1].clear()
             KD_student[2].clear()
-            # KD_student.clear()
+
 
             # loss  = F.mse_loss(KD_teacher_tensor0, KD_student_tensor0, reduction="none").mean([0, 2, 3]).sum()
             # loss += F.mse_loss(KD_teacher_tensor1, KD_student_tensor1, reduction="none").mean([0, 2, 3]).sum()
@@ -636,12 +631,11 @@ def train(args, infer_pg, is_infer_rank, train_pg, group_rank, infer_rank,teache
                 lr_scheduler.step()
                 optimizer.zero_grad()
 
-            # Checks if the accelerator has performed an optimization step behind the scenes 检查梯度当前是否在所有进程之间同步
+
             if sync_gradients:
 
                 progress_bar.update(1)
                 global_step += 1
-                # accelerator.log({"train_loss": train_loss}, step=global_step)
                 train_loss = 0.0
 
                 if is_main_process:
@@ -660,31 +654,25 @@ def train(args, infer_pg, is_infer_rank, train_pg, group_rank, infer_rank,teache
                 break
         
 
+
 def infer(args, infer_pg, is_infer_rank, infer_rank,teacher,paths):
     weight_dtype = torch.bfloat16
     infer_device = torch.device("cuda")
 
-    text_encoder_t5 = MiniCPMO.from_pretrained(
-            paths,
-            trust_remote_code=True,
-            attn_implementation='sdpa', # sdpa or flash_attention_2
-            torch_dtype=torch.bfloat16,
-            init_vision=True,
-            init_audio=True,
-            init_tts=True
-        )
+    
+    text_encoder_t5 = Qwen2_5_VLForConditionalGeneration.from_pretrained(paths, torch_dtype=torch.bfloat16)
 
     text_encoder = CLIPTextModel.from_pretrained(teacher, revision="refs/pr/1",subfolder="text_encoder", torch_dtype=torch.bfloat16)
     text_encoder_2 = T5EncoderModel.from_pretrained(teacher, revision="refs/p1", subfolder="text_encoder_2", torch_dtype=torch.bfloat16)
-    transformer_t = FluxTransformer2DModel.from_pretrained(teacher, subfolder="transformer")
-    tokenizer_1 = MiniCPMOTokenizerFast.from_pretrained(paths, trust_remote_code=True)
+    transformer_teacher = FluxTransformer2DModel.from_pretrained(teacher, subfolder="transformer")
+    tokenizer_1 = AutoTokenizer.from_pretrained(paths, trust_remote_code=True)
 
 
     text_encoder_t5.eval()
     text_encoder_t5.requires_grad_(False)
 
-    transformer_t.train()
-    transformer_t.requires_grad_(False)
+    transformer_teacher.train()
+    transformer_teacher.requires_grad_(False)
     text_encoder.eval()
     text_encoder.requires_grad_(False)
     text_encoder_2.eval()
@@ -694,11 +682,11 @@ def infer(args, infer_pg, is_infer_rank, infer_rank,teacher,paths):
     text_encoder_2.to(infer_device, dtype=weight_dtype)
     text_encoder_t5.to(infer_device, dtype=weight_dtype)
 
-    transformer_t.to(infer_device, dtype=weight_dtype)
-    # vae.to(infer_device, dtype=weight_dtype)
+    transformer_teacher.to(infer_device, dtype=weight_dtype)
+
 
     KD_teacher = []
-    cast_hook_list(transformer_t, KD_teacher)
+    cast_hook_list(transformer_teacher, KD_teacher)
 
     height = 128
     width = 128
@@ -714,8 +702,8 @@ def infer(args, infer_pg, is_infer_rank, infer_rank,teacher,paths):
 
     input_ids_t5_en_ = torch.empty(size=(bsz_org, seq_len), dtype=torch.long, device=infer_device)
     input_ids_en_ = torch.empty(size=(bsz_org, seq_len_1), dtype=torch.long, device=infer_device)
-    input_ids_t5_ = torch.empty(size=(bsz_org, seq_len), dtype=torch.int32, device=infer_device)
-    attention_mask_ = torch.empty(size=(bsz_org, seq_len), dtype=torch.bool, device=infer_device)
+    input_ids_t5_ = torch.empty(size=(bsz_org, seq_len), dtype=torch.long, device=infer_device)
+    attention_mask_ = torch.empty(size=(bsz_org, seq_len), dtype=torch.long, device=infer_device)
     # pixel_values_ = torch.empty(size=(bsz_org, 1296, 1176), dtype=torch.float32, device=infer_device)
     # image_grid_thw_ = torch.empty(size=(bsz_org, 3), dtype=torch.long, device=infer_device)
 
@@ -730,17 +718,19 @@ def infer(args, infer_pg, is_infer_rank, infer_rank,teacher,paths):
         with torch.no_grad():
             try:
                 torch.cuda.synchronize()
+             
                 input_ids_t5_en = tai.send_to_infer_device(input_ids_t5_en_, infer_pg, is_infer_rank, infer_rank)
                 torch.cuda.synchronize()
+             
                 input_ids_en = tai.send_to_infer_device(input_ids_en_, infer_pg, is_infer_rank, infer_rank)
                 torch.cuda.synchronize()
+        
                 input_ids_t5 = tai.send_to_infer_device(input_ids_t5_, infer_pg, is_infer_rank, infer_rank)
                 torch.cuda.synchronize()
+              
                 attention_mask = tai.send_to_infer_device(attention_mask_, infer_pg, is_infer_rank, infer_rank)
                 torch.cuda.synchronize()
-                # print(f"infer finish get attention_mask")
-                # pixel_values = tai.send_to_infer_device(pixel_values_, infer_pg, is_infer_rank, infer_rank)
-                # image_grid_thw = tai.send_to_infer_device(image_grid_thw_, infer_pg, is_infer_rank, infer_rank)
+
 
             except Exception as e:
                 print(f"****** Error: infer_pg: {dist.get_process_group_ranks(infer_pg)}, is_infer_rank: {is_infer_rank}, infer_rank: {infer_rank}")
@@ -748,23 +738,22 @@ def infer(args, infer_pg, is_infer_rank, infer_rank,teacher,paths):
                 raise e
 
 
-
             prompts = [input_ids_t5_en, input_ids_en]
             batch_size = len(input_ids_t5)
             height = 128
             width = 128
-            num_channels_latents = transformer_t.config.in_channels // 4
+            num_channels_latents = transformer_teacher.config.in_channels // 4
             shape = (batch_size, num_channels_latents, height, width)
             generator = torch.Generator(device=infer_device).manual_seed(step)
             latents = randn_tensor(shape, generator=generator, device=infer_device, dtype=weight_dtype) # b*16*128*128
             latents = _pack_latents(latents, batch_size, num_channels_latents, height, width)
             latent_image_ids = _prepare_latent_image_ids(batch_size, height, width, infer_device, weight_dtype)
 
-            # Prepare timesteps
+   
             num_inference_steps = 1
             sigmas = np.linspace(1.0, 1 / num_inference_steps, num_inference_steps)
             image_seq_len = latents.shape[1]
-            # print(f"base_image_seq_len: {scheduler.config.base_image_seq_len}, max_image_seq_len: {scheduler.config.max_image_seq_len}")
+ 
             mu = calculate_shift(
                 image_seq_len,
                 scheduler.config.base_image_seq_len,
@@ -781,18 +770,17 @@ def infer(args, infer_pg, is_infer_rank, infer_rank,teacher,paths):
                 mu=mu,
             )
 
-            inputs={"input_ids":input_ids_t5.to(infer_device),"attention_mask":attention_mask.to(infer_device),"pixel_values":[[]]*len(input_ids_t5)}
-
-            output_hidden_state_all= text_encoder_t5.generate(**inputs,\
-                tokenizer=tokenizer_1,max_new_tokens=2048,decode_text=False).hidden_states
+            inputs = {"input_ids":input_ids_t5.to(infer_device), "attention_mask":attention_mask.to(infer_device)} 
+            generated_ids = text_encoder_t5.generate(**inputs, max_new_tokens=1, output_hidden_states=True, return_dict_in_generate=True)
+            text_embeddings = torch.stack(generated_ids["hidden_states"][0],dim=1)
             
-            text_embeddings = torch.stack(output_hidden_state_all[0], dim=1)
-
+            # print(f"text_embeddings: {text_embeddings.shape}")
             prompt_embeds_en = text_encoder_2(prompts[0].to(infer_device), output_hidden_states=False)[0]
             add_text_embeds_en = text_encoder(prompts[1].to(infer_device), output_hidden_states=False).pooler_output
             text_ids = torch.zeros(prompt_embeds_en.shape[1], 3).to(device=infer_device, dtype=weight_dtype)
             timestep = timesteps[0].expand(batch_size).to(device=infer_device, dtype=weight_dtype)
-            noise_pred_teacher = transformer_t(
+
+            noise_pred_teacher = transformer_teacher(
                 hidden_states=latents,
                 timestep=timestep / 1000,
                 txt_ids=text_ids,
@@ -803,12 +791,15 @@ def infer(args, infer_pg, is_infer_rank, infer_rank,teacher,paths):
                 return_dict=False,
             )[0]
 
+
             KD_teacher_tensor0 = torch.stack(KD_teacher[0], dim=1).to(infer_device)
             KD_teacher_tensor1 = torch.stack(KD_teacher[1], dim=1).to(infer_device)
             KD_teacher_tensor2 = torch.stack(KD_teacher[2], dim=1).to(infer_device)
+
             KD_teacher[0].clear()
             KD_teacher[1].clear()
             KD_teacher[2].clear()
+
             torch.cuda.synchronize()
             tai.receive_from_infer_device(KD_teacher_tensor0, infer_pg, is_infer_rank, infer_rank)
             torch.cuda.synchronize()
@@ -839,15 +830,14 @@ def seed_torch(seed=2024):
 
 def main(args):
 
+    # local_rank = int(os.environ["LOCAL_RANK"])
+    # rank = int(os.environ["RANK"])
+    
 
     local_infer_world_size = 2
     local_rank, local_world_size, rank, world_size, group_rank, group_world_size = tai.dist_info1()
-
-
     torch.distributed.init_process_group(backend="nccl")
     torch.cuda.set_device(local_rank)
-
-
     seed_torch(seed=rank*2024)
 
    
@@ -857,7 +847,10 @@ def main(args):
     _DATA_PARALLEL_GROUP = train_pg
 
     teacher = "/mnt/data/group/models/flux/FLUX.1-dev"
-    paths = "/mnt/data/group/models/flux/MiniCPM-o-2_6"
+    if args.qwen_size == "3b":
+        paths = "/mnt/data/group/models/Qwen2.5-VL-3B-Instruct"
+    if args.qwen_size == "7b":
+        paths = "/mnt/data/group/models/Qwen2.5-VL-7B-Instruct"
 
     if is_infer_rank:
 

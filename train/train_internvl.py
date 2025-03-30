@@ -57,7 +57,7 @@ import time
 from core.pipeline import train_and_infer as tai
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel
-from proj import create_proj_internvl4b
+from utils.proj import create_proj_internvl4b
 
 def normalize(logit):
     mean = logit.mean(dim=-1, keepdims=True)
@@ -308,7 +308,7 @@ class InferPreprocess(Preprocess):
         # image_grid_thw = batch["image_grid_thw"].to(device=train_device)
         # pixel_values = batch["pixel_values"].to(device=train_device)
 
-        # Send the batch data of the training gpu to the inference gpu
+        # Send the batch data of the training gpu to the infer gpu
         torch.cuda.synchronize()
         tai.send_to_infer_device(input_ids_t5_en, self.infer_pg, self.is_infer_rank, self.infer_rank)
         torch.cuda.synchronize()
@@ -336,7 +336,7 @@ class InferPreprocess(Preprocess):
         timestep = torch.zeros((self.bsz_org), dtype=torch.bfloat16,  device=train_device)
         torch.cuda.synchronize()
 
-        # Get inference results from inference gpu
+        # Get infer results from infer gpu
         KD_teacher_tensor0 = tai.receive_from_infer_device(KD_teacher_tensor0, self.infer_pg, self.is_infer_rank, self.infer_rank)
         torch.cuda.synchronize()
  

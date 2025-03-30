@@ -410,7 +410,7 @@ class MiniCPMO(MiniCPMOPreTrainedModel):
         Extract audio embeddings in a streaming manner using cached key-value pairs.
 
         This method processes incoming audio features incrementally and stores/updates `past_key_values`
-        for faster inference on subsequent audio frames. It only supports batch_size=1 and is intended
+        for faster infer on subsequent audio frames. It only supports batch_size=1 and is intended
         for streaming scenarios.
 
         Args:
@@ -472,7 +472,7 @@ class MiniCPMO(MiniCPMOPreTrainedModel):
 
         This method computes embeddings for all audio frames at once, either using full attention (when
         `chunk_length` is -1) or chunk-based attention (when `chunk_length` is a positive number). It does
-        not use key-value caching and is suitable for non-streaming inference.
+        not use key-value caching and is suitable for non-streaming infer.
 
         Args:
             data (dict):
@@ -886,7 +886,7 @@ class MiniCPMO(MiniCPMOPreTrainedModel):
         if batched is False:
             images_list, msgs_list = [images_list], [msgs_list]
         else:
-            assert images_list is None, "Please integrate image to msgs when using batch inference."
+            assert images_list is None, "Please integrate image to msgs when using batch infer."
             images_list = [None] * len(msgs_list)
         assert len(images_list) == len(msgs_list), "The batch dim of images_list and msgs_list should be the same."
 
@@ -1885,7 +1885,7 @@ class MiniCPMO(MiniCPMOPreTrainedModel):
         return wav_numpy, sr
 
 
-# Copied from transformers.models.whisper.modeling_whisper.WhisperEncoderLayer and add use_cache for streaming inference
+# Copied from transformers.models.whisper.modeling_whisper.WhisperEncoderLayer and add use_cache for streaming infer
 class MiniCPMWhisperEncoderLayer(nn.Module):
     def __init__(self, config: WhisperConfig, layer_idx: int = None):
         super().__init__()
@@ -1969,7 +1969,7 @@ class MiniCPMWhisperEncoderLayer(nn.Module):
         return outputs
 
 
-# Copied from from transformers.models.whisper.modeling_whisper.WhisperEncoder and add use_cache for streaming inference
+# Copied from from transformers.models.whisper.modeling_whisper.WhisperEncoder and add use_cache for streaming infer
 class MiniCPMWhisperEncoder(WhisperEncoder):
 
     def __init__(self, config: WhisperConfig):
@@ -2025,9 +2025,9 @@ class MiniCPMWhisperEncoder(WhisperEncoder):
                 otherwise it will be a tuple.
 
             past_key_values (`EncoderDecoderCache`, *optional*):
-                When using caching for faster inference, this is an object that stores the key-value pairs
+                When using caching for faster infer, this is an object that stores the key-value pairs
                 for attention states. If provided, the model will append new states to the existing cache
-                and return the updated cache. This speeds up sequential decoding or chunked inference.
+                and return the updated cache. This speeds up sequential decoding or chunked infer.
 
                 - If `past_key_values` is `None`, no past states are used or returned.
                 - If `past_key_values` is not `None` and `use_cache=True`, the model will use the provided
@@ -2035,7 +2035,7 @@ class MiniCPMWhisperEncoder(WhisperEncoder):
 
             use_cache (`bool`, *optional*):
                 Whether or not the model should use caching (`past_key_values`) to speed up processing
-                during inference. When set to `True`, the model will:
+                during infer. When set to `True`, the model will:
                 - Inspect and use `past_key_values` if provided.
                 - Return updated `past_key_values` (under the name `next_encoder_cache` in
                     `BaseModelOutputWithPast`).
@@ -2489,7 +2489,7 @@ def make_streaming_chunk_mask_generation(
         torch.Tensor: Causal mask for streaming TTS generation, shape is [batch_size=1, 1, seq_len=1, past_seen_tokens+1]
 
     Raises:
-        AssertionError: If the batch size is not 1 (only supports batch size of 1 for inference).
+        AssertionError: If the batch size is not 1 (only supports batch size of 1 for infer).
     """
     assert inputs_embeds.shape[0] == 1
 

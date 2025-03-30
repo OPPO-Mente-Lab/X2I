@@ -9,10 +9,10 @@ from diffusers.image_processor import VaeImageProcessor
 
 
 from transformers import T5EncoderModel, T5TokenizerFast, CLIPTokenizer, CLIPTextModel, T5Config
-from transformers import AutoModel, AutoTokenizer, AutoModelForCausalLM, AutoProcessor
+from transformers import AutoModel, AutoTokenizer, AutoModelForCausalLM, AutoProcessor, Qwen2_5_VLForConditionalGeneration
 
-
-from proj import create_proj_minicpm
+from qwen_vl_utils import process_vision_info
+from utils.proj import create_proj3_qwen3b, create_proj3_qwen7b
 from PIL import Image
 import argparse
 # from qwen_vl_utils import process_vision_info
@@ -21,14 +21,16 @@ import librosa
 import soundfile as sf
 from decord import VideoReader, cpu, gpu
 
-from minicpm.modeling_minicpmo import MiniCPMO
-from minicpm.processing_minicpmo import MiniCPMOProcessor
-from minicpm.tokenization_minicpmo_fast import MiniCPMOTokenizerFast
+
 
 
 parser = argparse.ArgumentParser("Inference", add_help=True)
-parser.add_argument('--minicpm_path', type=str, default="openbmb/MiniCPM-o-2_6")
-parser.add_argument('--flux_path', type=str,  default="shuttleai/shuttle-3-diffusion")
+# parser.add_argument('--minicpm_path', type=str, default="openbmb/MiniCPM-o-2_6")
+parser.add_argument('--qwen_size', type=str, default='7b', choices=['3b', '7b'], help="Model size: 1b or 4b")
+parser.add_argument('--qwen3b_path', type=str, default="/mnt/data/group/models/Qwen2.5-VL-3B-Instruct")
+# parser.add_argument('--flux_path', type=str,  default="shuttleai/shuttle-3-diffusion")
+parser.add_argument('--flux_path', type=str,  default="/mnt/data/group/models/flux/shuttle-3-diffusion")
+parser.add_argument('--use_answer', type=bool,  default=False)
 parser.add_argument('--num_steps', type=int, default=4)
 parser.add_argument('--num_gen_imgs', type=int, default=1)
 parser.add_argument('--task', type=str, default="all")
@@ -36,33 +38,31 @@ args = parser.parse_args()
 
 device = "cuda:0"
 dtype = torch.bfloat16
-outputs = "./outputs_minicpm"
+
+outputs = "./outputs_qwen3b"
+
+if args.qwen_size == "7b":
+    outputs = "./outputs_qwen7b"
+    qwen_path = '/mnt/data/group/models/Qwen2.5-VL-7B-Instruct'
+    qwen_proj_path = '/mnt/data/group/xuguo/X2I_qwen/checkpoints/qwen7b/diffusion_pytorch_model.bin'
+if args.qwen_size == "3b":
+    outputs = "./outputs_qwen3b"
+    qwen_path = '/mnt/data/group/models/Qwen2.5-VL-3B-Instruct'
+    qwen_proj_path = '/mnt/data/group/xuguo/X2I_qwen/checkpoints/qwen3b/diffusion_pytorch_model.bin'
+
+
 num_steps = args.num_steps
 flux_path = args.flux_path
-
-minicpm_path = args.minicpm_path
+use_answer = args.use_answer
 num_gen_imgs = args.num_gen_imgs
 task = args.task
 
-minicpm_proj_path = "/mnt/data/group/majian/PEA2/result_fit_speed/test_MiniCPM/45000/diffusion_pytorch_model.bin"
 
 torch.cuda.set_device(device)
 
-minicpm_tokenizer = MiniCPMOTokenizerFast.from_pretrained(minicpm_path, trust_remote_code=True)
-minicpm_processor = MiniCPMOProcessor.from_pretrained(minicpm_path, trust_remote_code=True)
-minicpm_encoder = MiniCPMO.from_pretrained(
-    minicpm_path,
-    trust_remote_code=True,
-    attn_implementation='sdpa', # sdpa or flash_attention_2
-    torch_dtype=dtype,
-    init_vision=True,
-    init_audio=True,
-    init_tts=True
-).eval().to(device=device)
-minicpm_encoder.init_tts()
 
-print(f"minicpm_tokenizer: {type(minicpm_tokenizer)}, minicpm_processor: {type(minicpm_processor)}, minicpm_encoder: {type(minicpm_encoder)}")
-
+qwen_encoder = Qwen2_5_VLForConditionalGeneration.from_pretrained(qwen_path, torch_dtype=torch.bfloat16).eval().to(device=device)
+qwen_processor = AutoProcessor.from_pretrained(qwen_path)
 
 clip_tokenizer = CLIPTokenizer.from_pretrained(flux_path, revision="refs/pr/1", subfolder="tokenizer", torch_dtype=dtype)
 t5_tokenizer = T5TokenizerFast.from_pretrained(flux_path, revision="refs/pr/1", subfolder="tokenizer_2", torch_dtype=dtype)
@@ -75,7 +75,12 @@ pipeline = FluxPipeline.from_pretrained(flux_path, text_encoder=None, text_encod
 vae = AutoencoderKL.from_pretrained(flux_path, revision="refs/pr/1", subfolder="vae", torch_dtype=dtype).to(device)
 
 def get_proj(proj_path):
-    proj = create_proj_minicpm(in_channels=29, use_t5=False, use_scale=False, use_cnn=True)
+
+    if args.qwen_size == "3b":
+        proj = create_proj3_qwen3b(in_channels=37, use_t5=False, use_scale=False, use_cnn=True)
+    if args.qwen_size == "7b":
+        proj = create_proj3_qwen7b(in_channels=29, use_t5=False, use_scale=False, use_cnn=True)
+
 
     state_dict = torch.load(proj_path, map_location="cpu")
     state_dict_new = {}
@@ -88,7 +93,7 @@ def get_proj(proj_path):
     proj.eval()
     return proj
 
-minicpm_proj = get_proj(minicpm_proj_path)
+qwen_proj = get_proj(qwen_proj_path)
 def get_t5_input_embeds(text_prompt=None):
     text_input_ids = clip_tokenizer(
         text_prompt,
@@ -114,65 +119,62 @@ def get_t5_input_embeds(text_prompt=None):
     return pooled_prompt_embeds, prompt_embeds
 
 def get_text_embeddings(output_hidden_state):
-    text_embeddings = torch.stack(output_hidden_state[0], dim=1)
+    if args.qwen_size == "3b":
+        text_embeddings = torch.cat(output_hidden_state["hidden_states"][0]).unsqueeze(0)
+    if args.qwen_size == "7b":
+        if use_answer:
+            text_embeddings = []
+            for hidden_states in  output_hidden_state["hidden_states"][1:]:
+                text_embeddings.append(torch.cat(hidden_states))
+            text_embeddings = torch.cat(text_embeddings,dim=1).unsqueeze(0)
+        else:
+            text_embeddings = torch.cat(output_hidden_state["hidden_states"][0]).unsqueeze(0)
     return text_embeddings
 
-MAX_NUM_FRAMES=64 # if cuda OOM set a smaller number
-def encode_video(video_path):
-    def uniform_sample(l, n):
-        gap = len(l) / n
-        idxs = [int(i * gap + gap / 2) for i in range(n)]
-        return [l[i] for i in idxs]
-    # vr = VideoReader(video_path)
-    vr = VideoReader(video_path, ctx=cpu(0))
-    sample_fps = round(vr.get_avg_fps() / 1)  # FPS
-    frame_idx = [i for i in range(0, len(vr), sample_fps)]
-    if len(frame_idx) > MAX_NUM_FRAMES:
-        frame_idx = uniform_sample(frame_idx, MAX_NUM_FRAMES)
-    frames = vr.get_batch(frame_idx).asnumpy()
-    frames = [Image.fromarray(v.astype('uint8')) for v in frames]
-    print('num frames:', len(frames))
-    return frames
 
-def get_minicpm_inputs_embeds(videos=None, images=None, audios=None, text_prompt=None, proj=minicpm_proj):
-    message = [{"role": "user", "content": ""}]
+
+def get_qwen_inputs_embeds(videos=None, images=None, text_prompt=None, proj=qwen_proj):
+    message = [{"role": "user", "content": []}]
     image_list = []
-    audio_list = []
     if images is not None and len(images) > 0:
         for image in images:
-            image_input = Image.open(image).convert('RGB')
-            message[0]["content"] += "(<image>./</image>)\n"
+            image_input = Image.open(image).convert('RGB').resize(size=(128, 128))
+            message[0]["content"].append({"type": "image", "image": image_input})
             image_list.append(image_input)
+    
     if videos is not None and len(videos) > 0:
-        for video in videos:
-            frames = encode_video(video)
-            message[0]["content"] += '(<image>./</image>)\n' * len(frames)
-            image_list.extend(frames)
-    if audios is not None and len(audios) > 0:
-        for audio in audios:
-            audio_input, _ = librosa.load(audio, sr=16000, mono=True)
-            message[0]["content"] += '(<audio>./</audio>)\n'
-            audio_list.append(audio_input)
-    if text_prompt is not None:
-        message[0]["content"] += text_prompt
-    prompt = minicpm_processor.tokenizer.apply_chat_template(message, tokenize=False, add_generation_prompt=True)
+        assert len(videos) == 1
+        video = videos[0]
+        message[0]["content"].append({
+                    "type": "video",
+                    "video": video,
+                    "max_pixels": 128 * 128,
+                    "fps": 1.0,
+                })
+        _, video_inputs = process_vision_info(message)
 
-    inputs = minicpm_processor(
-        text=[prompt],
-        images=None if len(image_list) == 0 else [image_list],
-        audios=None if len(audio_list) == 0 else [audio_list],
-        max_slice_nums=1,
-        use_image_id=False,
-        chunk_input=True,
-        return_tensors="pt",
-        # padding="max_length",
-        max_length=32768,
-        sampling_rate=16000,
-        add_special_tokens=True
+    if videos is None:
+        video_inputs = None
+             
+
+    if text_prompt is not None:
+        message[0]["content"].append({"type": "text", "text": text_prompt})
+    
+    prompt = qwen_processor.apply_chat_template(message, tokenize=False, add_generation_prompt=True)
+
+    inputs = qwen_processor(
+    text=[prompt],
+    images=None if len(image_list) == 0 else image_list,
+    videos= video_inputs,
+    padding="max_length",
+    max_length=512, 
+    truncation=True, 
+    return_tensors="pt",
+    
     ).to(device)
-    inputs.pop('image_sizes')
-    output_hidden_state = minicpm_encoder.generate(**inputs,\
-        tokenizer=minicpm_tokenizer,max_new_tokens=1,decode_text=False).hidden_states
+
+    output_hidden_state = qwen_encoder.generate(**inputs, max_new_tokens=128,output_hidden_states=True,return_dict_in_generate=True)
+
     text_embeddings = get_text_embeddings(output_hidden_state)
     pooled_prompt_embeds, prompt_embeds = proj(text_embeddings)
     return pooled_prompt_embeds, prompt_embeds
@@ -231,7 +233,7 @@ def text2image(outputs=outputs):
     for index, prompt_dict in enumerate(prompts):
         for key, prompt in prompt_dict.items():
             for i in range(num_gen_imgs):
-                pooled_prompt_embeds, prompt_embeds = get_minicpm_inputs_embeds(text_prompt=prompt)
+                pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(text_prompt=prompt)
                 generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"{index}_{key}_{i}")
 
 
@@ -240,16 +242,16 @@ def image2image(outputs=outputs):
     os.makedirs(outputs, exist_ok=True)
 
     for i in range(num_gen_imgs):
-        pooled_prompt_embeds, prompt_embeds = get_minicpm_inputs_embeds(images=["./data/image/sea_moon.jpg"])
+        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(images=["./data/image/sea_moon.jpg"])
         generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"sea_moon_{i}")
 
-        pooled_prompt_embeds, prompt_embeds = get_minicpm_inputs_embeds(images=["./data/image/Sailor_Moon.jpg"])
+        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(images=["./data/image/Sailor_Moon.jpg"])
         generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"Sailor_Moon_{i}")
 
-        pooled_prompt_embeds, prompt_embeds = get_minicpm_inputs_embeds(images=["./data/image/dog.jpg", "./data/image/hat.jpg"])
+        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(images=["./data/image/dog.jpg", "./data/image/hat.jpg"])
         generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"dog_hat_{i}")
 
-        pooled_prompt_embeds, prompt_embeds = get_minicpm_inputs_embeds(images=["./data/image/dog2.jpg", "./data/image/duck.jpg", "./data/image/glasses.jpg", "./data/image/background.png"])
+        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(images=["./data/image/dog2.jpg", "./data/image/duck.jpg", "./data/image/glasses.jpg", "./data/image/background.png"])
         generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"dog2_duck_glasses_background_{i}")
 
 
@@ -258,23 +260,23 @@ def imagetext2image(outputs=outputs):
     os.makedirs(outputs, exist_ok=True)
 
     for i in range(num_gen_imgs):
-        pooled_prompt_embeds, prompt_embeds = get_minicpm_inputs_embeds(images=["./data/image/yarn_ball.jpg"], text_prompt="Refer to the image style and generate a cute giant panda")
+        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(images=["./data/image/yarn_ball.jpg"], text_prompt="Refer to the image style and generate a cute giant panda")
         generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"yarn_ball_panda_{i}")
 
         for emoji in ["laugh out loud", "sad", "smile"]:
-            pooled_prompt_embeds, prompt_embeds = get_minicpm_inputs_embeds(images=["./data/image/man.jpg"], text_prompt=f"Make the person in the picture {emoji}")
+            pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(images=["./data/image/man.jpg"], text_prompt=f"Make the person in the picture {emoji}")
             generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"man_{emoji}_{i}")
 
-        pooled_prompt_embeds, prompt_embeds = get_minicpm_inputs_embeds(images=["./data/image/hutong.jpg"], text_prompt="Add a car in the picture")
+        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(images=["./data/image/hutong.jpg"], text_prompt="Add a car in the picture")
         generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"hutong_car_{i}")
 
-        pooled_prompt_embeds, prompt_embeds = get_minicpm_inputs_embeds(images=["./data/image/berry_bowl.jpg"], text_prompt="A berry_bowl with a blue house in the background.")
+        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(images=["./data/image/berry_bowl.jpg"], text_prompt="A berry_bowl with a blue house in the background.")
         generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"berry_bowl_house_{i}")
 
-        pooled_prompt_embeds, prompt_embeds = get_minicpm_inputs_embeds(images=["./data/image/dog2.jpg", "./data/image/backpack.jpg"], text_prompt="with the Eiffel Tower in the background.")
+        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(images=["./data/image/dog2.jpg", "./data/image/backpack.jpg"], text_prompt="with the Eiffel Tower in the background.")
         generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"dog2_backpack_Eiffel_Tower_{i}")
 
-        pooled_prompt_embeds, prompt_embeds = get_minicpm_inputs_embeds(images=["./data/image/ocr.png"], text_prompt="OCR text recognition.")
+        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(images=["./data/image/ocr.png"], text_prompt="OCR text recognition.")
         generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"ocr_{i}")
 
 
@@ -283,41 +285,16 @@ def video2image(outputs=outputs):
     os.makedirs(outputs, exist_ok=True)
 
     for i in range(num_gen_imgs):
-        pooled_prompt_embeds, prompt_embeds = get_minicpm_inputs_embeds(videos=["./data/video/particle_collision.mp4"])
+        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(videos=["./data/video/particle_collision.mp4"])
         generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"sea_moon_{i}")
 
-        pooled_prompt_embeds, prompt_embeds = get_minicpm_inputs_embeds(videos=["./data/video/mixkit-paper.mp4"])
+        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(videos=["./data/video/mixkit-paper.mp4"])
         generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"mixkit-paper_{i}")
 
-        pooled_prompt_embeds, prompt_embeds = get_minicpm_inputs_embeds(videos=["./data/video/Skiing.mp4"])
+        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(videos=["./data/video/Skiing.mp4"])
         generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"Skiing_{i}")
 
 
-def audio2image(outputs=outputs):
-    outputs = os.path.join(outputs, "audio2image")
-    os.makedirs(outputs, exist_ok=True)
-
-    for i in range(num_gen_imgs):
-        pooled_prompt_embeds, prompt_embeds = get_minicpm_inputs_embeds(audios=["./data/audio/Eva_Cassidy-Ain't_No_Sunshine.mp3"])
-        generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"Eva_Cassidy-Ain't_No_Sunshine_{i}")
-
-        pooled_prompt_embeds, prompt_embeds = get_minicpm_inputs_embeds(audios=["./data/audio/A_Dream_of_Wedding.mp3"])
-        generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"A_Dream_of_Wedding_{i}")
-
-        pooled_prompt_embeds, prompt_embeds = get_minicpm_inputs_embeds(audios=["./data/audio/Rondo_alla_Turca.mp3"])
-        generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"Rondo_alla_Turca_{i}")
-
-        pooled_prompt_embeds, prompt_embeds = get_minicpm_inputs_embeds(audios=["./data/audio/insects_and_birds.mp3"])
-        generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"insects_and_birds_{i}")
-
-        pooled_prompt_embeds, prompt_embeds = get_minicpm_inputs_embeds(audios=["./data/audio/flowing_water.ogg"])
-        generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"flowing_water_{i}")
-
-        pooled_prompt_embeds, prompt_embeds = get_minicpm_inputs_embeds(audios=["./data/audio/Train_whistle.mp3"])
-        generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"Train_whistle_{i}")
-
-        pooled_prompt_embeds, prompt_embeds = get_minicpm_inputs_embeds(audios=["./data/audio/exciting-emotion.wav"])
-        generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"exciting-emotion_{i}")
 
 
 def x2image(outputs=outputs):
@@ -325,13 +302,13 @@ def x2image(outputs=outputs):
     os.makedirs(outputs, exist_ok=True)
 
     for i in range(num_gen_imgs):
-        pooled_prompt_embeds, prompt_embeds = get_minicpm_inputs_embeds(images=["./data/image/Sanxingdui.jpg"], audios=["./data/audio/Mechanical_operation.mp3"], text_prompt="In the abandoned cyberpunk ruins, a mysterious symbiotic relationship has been established between nanobots and humans. These nanobots zip back and forth through the dilapidated buildings, repairing the decaying parts of the city, while humans, by merging with the nanobots, gain extraordinary abilities. In this sci-fi world, a dazzling yet perilous new ecosystem is created, captivating people in the fantasies of the future.")
+        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(images=["./data/image/Sanxingdui.jpg"], text_prompt="In the abandoned cyberpunk ruins, a mysterious symbiotic relationship has been established between nanobots and humans. These nanobots zip back and forth through the dilapidated buildings, repairing the decaying parts of the city, while humans, by merging with the nanobots, gain extraordinary abilities. In this sci-fi world, a dazzling yet perilous new ecosystem is created, captivating people in the fantasies of the future.")
         generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"Sanxingdui_Mechanical_operation_{i}")
 
-        pooled_prompt_embeds, prompt_embeds = get_minicpm_inputs_embeds(images=["./data/image/Shuimohua.jpg"], audios=["./data/audio/Moonlight_Sonata.mp3"], text_prompt="Artistic conception poetry")
+        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(images=["./data/image/Shuimohua.jpg"])
         generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"Shuimohua_Moonlight_Sonata_{i}")
 
-        pooled_prompt_embeds, prompt_embeds = get_minicpm_inputs_embeds(videos=["./data/video/particle_collision.mp4"], audios=["./data/audio/Electronic_music_with_strong_rhythm.mp3"])
+        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(videos=["./data/video/particle_collision.mp4"])
         generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"particle_collision_Electronic_music_{i}")
 
         
@@ -346,8 +323,6 @@ if __name__ == "__main__":
         imagetext2image()
     if task in ["all", "video2image"]:
         video2image()
-    if task in ["all", "audio2image"]:
-        audio2image()
     if task in ["all", "x2image"]:
         x2image()
 

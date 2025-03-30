@@ -10,7 +10,7 @@ import torch.nn as nn
 import time
 import os
 
-from proj import create_proj3_qwen3b, create_proj3_qwen7b
+from utils.proj import create_proj3_qwen3b, create_proj3_qwen7b
 from qwen_vl_utils import process_vision_info
 from PIL import Image
 import shutil

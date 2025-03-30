@@ -7,12 +7,12 @@ import os
 from diffusers import FluxPipeline, AutoencoderKL
 from diffusers.image_processor import VaeImageProcessor
 
-
+from utils.internvl_util import build_transform, dynamic_preprocess, load_image
 from transformers import T5EncoderModel, T5TokenizerFast, CLIPTokenizer, CLIPTextModel, T5Config
-from transformers import AutoModel, AutoTokenizer, AutoModelForCausalLM, AutoProcessor, Qwen2_5_VLForConditionalGeneration
-
-from qwen_vl_utils import process_vision_info
-from proj import create_proj3_qwen3b, create_proj3_qwen7b
+from transformers import AutoModel, AutoTokenizer, AutoModelForCausalLM, AutoProcessor
+from model_internvl.internvl.modeling_internvl_chat import InternVLChatModel
+from model_internvl.internvl.conversation import get_conv_template
+from utils.proj import create_proj_internvl1b, create_proj_internvl4b
 from PIL import Image
 import argparse
 # from qwen_vl_utils import process_vision_info
@@ -20,17 +20,15 @@ import argparse
 import librosa
 import soundfile as sf
 from decord import VideoReader, cpu, gpu
-
+import pdb
 
 
 
 parser = argparse.ArgumentParser("Inference", add_help=True)
+parser.add_argument('--internvl_size', type=str, default='4b', choices=['1b', '4b'], help="Model size: 1b or 4b")
 # parser.add_argument('--minicpm_path', type=str, default="openbmb/MiniCPM-o-2_6")
-parser.add_argument('--qwen_size', type=str, default='7b', choices=['3b', '7b'], help="Model size: 1b or 4b")
-parser.add_argument('--qwen3b_path', type=str, default="/mnt/data/group/models/Qwen2.5-VL-3B-Instruct")
 # parser.add_argument('--flux_path', type=str,  default="shuttleai/shuttle-3-diffusion")
 parser.add_argument('--flux_path', type=str,  default="/mnt/data/group/models/flux/shuttle-3-diffusion")
-parser.add_argument('--use_answer', type=bool,  default=False)
 parser.add_argument('--num_steps', type=int, default=4)
 parser.add_argument('--num_gen_imgs', type=int, default=1)
 parser.add_argument('--task', type=str, default="all")
@@ -39,21 +37,17 @@ args = parser.parse_args()
 device = "cuda:0"
 dtype = torch.bfloat16
 
-outputs = "./outputs_qwen3b"
-
-if args.qwen_size == "7b":
-    outputs = "./outputs_qwen7b"
-    qwen_path = '/mnt/data/group/models/Qwen2.5-VL-7B-Instruct'
-    qwen_proj_path = '/mnt/data/group/xuguo/X2I_qwen/checkpoints/qwen7b/diffusion_pytorch_model.bin'
-if args.qwen_size == "3b":
-    outputs = "./outputs_qwen3b"
-    qwen_path = '/mnt/data/group/models/Qwen2.5-VL-3B-Instruct'
-    qwen_proj_path = '/mnt/data/group/xuguo/X2I_qwen/checkpoints/qwen3b/diffusion_pytorch_model.bin'
-
+if args.internvl_size == "4b":
+    outputs = "./outputs_internvl4b"
+    internvl_path = '/mnt/data/group/models/InternVL2_5-4B'
+    internvl_proj_path = '/mnt/data/group/majian/flux/result_fit_speed/4b_dev/10000/diffusion_pytorch_model.bin'
+if args.internvl_size == "1b":
+    outputs = "./outputs_internvl1b"
+    internvl_path = '/mnt/data/group/models/InternVL2_5-1B'
+    internvl_proj_path = '/mnt/data/group/majian/flux/result_fit_speed/1b/6400/diffusion_pytorch_model.bin'
 
 num_steps = args.num_steps
 flux_path = args.flux_path
-use_answer = args.use_answer
 num_gen_imgs = args.num_gen_imgs
 task = args.task
 
@@ -61,8 +55,11 @@ task = args.task
 torch.cuda.set_device(device)
 
 
-qwen_encoder = Qwen2_5_VLForConditionalGeneration.from_pretrained(qwen_path, torch_dtype=torch.bfloat16).eval().to(device=device)
-qwen_processor = AutoProcessor.from_pretrained(qwen_path)
+internvl_encoder = InternVLChatModel.from_pretrained(internvl_path, torch_dtype=torch.bfloat16).to(device=device)
+internvl_tokenizer =  AutoTokenizer.from_pretrained(internvl_path, trust_remote_code=True,pad_token='<|endoftext|>')
+
+
+
 
 clip_tokenizer = CLIPTokenizer.from_pretrained(flux_path, revision="refs/pr/1", subfolder="tokenizer", torch_dtype=dtype)
 t5_tokenizer = T5TokenizerFast.from_pretrained(flux_path, revision="refs/pr/1", subfolder="tokenizer_2", torch_dtype=dtype)
@@ -75,12 +72,10 @@ pipeline = FluxPipeline.from_pretrained(flux_path, text_encoder=None, text_encod
 vae = AutoencoderKL.from_pretrained(flux_path, revision="refs/pr/1", subfolder="vae", torch_dtype=dtype).to(device)
 
 def get_proj(proj_path):
-
-    if args.qwen_size == "3b":
-        proj = create_proj3_qwen3b(in_channels=37, use_t5=False, use_scale=False, use_cnn=True)
-    if args.qwen_size == "7b":
-        proj = create_proj3_qwen7b(in_channels=29, use_t5=False, use_scale=False, use_cnn=True)
-
+    if args.internvl_size == "4b":
+        proj = create_proj_internvl4b(in_channels=37, use_t5=False, use_scale=False, use_cnn=True)
+    if args.internvl_size == "1b":
+        proj = create_proj_internvl1b(in_channels=25, use_t5=False, use_scale=True, use_cnn=True)
 
     state_dict = torch.load(proj_path, map_location="cpu")
     state_dict_new = {}
@@ -93,7 +88,50 @@ def get_proj(proj_path):
     proj.eval()
     return proj
 
-qwen_proj = get_proj(qwen_proj_path)
+internvl1b_proj = get_proj(internvl_proj_path)
+
+
+def gene_token(tokenizer, pixel_values, question, generation_config, history=None, return_history=False,
+            num_patches_list=None, IMG_START_TOKEN='<img>', IMG_END_TOKEN='</img>', IMG_CONTEXT_TOKEN='<IMG_CONTEXT>',
+            verbose=False):
+
+    if history is None and pixel_values is not None and '<image>' not in question:
+        question = '<image>\n' + question
+
+    if num_patches_list is None:
+        num_patches_list = [pixel_values.shape[0]] if pixel_values is not None else []
+    assert pixel_values is None or len(pixel_values) == sum(num_patches_list)
+
+    template = get_conv_template('internvl2_5')
+    template.system_message = '你是书生·万象，英文名是InternVL，是由上海人工智能实验室、清华大学及多家合作单位联合开发的多模态大语言模型。'
+    eos_token_id = tokenizer.convert_tokens_to_ids(template.sep.strip())
+
+    history = [] if history is None else history
+    for (old_question, old_answer) in history:
+        template.append_message(template.roles[0], old_question)
+        template.append_message(template.roles[1], old_answer)
+    template.append_message(template.roles[0], question)
+    template.append_message(template.roles[1], None)
+    query = template.get_prompt()
+
+    if verbose and pixel_values is not None:
+        image_bs = pixel_values.shape[0]
+        print(f'dynamic ViT batch size: {image_bs}')
+
+    
+    for num_patches in num_patches_list:
+        image_tokens = IMG_START_TOKEN + IMG_CONTEXT_TOKEN * 256 * num_patches + IMG_END_TOKEN
+        query = query.replace('<image>', image_tokens, 1)
+
+    model_inputs = tokenizer(query, return_tensors='pt',padding="max_length",max_length=512, truncation=True)
+    input_ids = model_inputs['input_ids']
+    attention_mask = model_inputs['attention_mask']
+    generation_config['eos_token_id'] = eos_token_id
+
+    return  pixel_values,input_ids,attention_mask
+
+
+
 def get_t5_input_embeds(text_prompt=None):
     text_input_ids = clip_tokenizer(
         text_prompt,
@@ -119,69 +157,39 @@ def get_t5_input_embeds(text_prompt=None):
     return pooled_prompt_embeds, prompt_embeds
 
 def get_text_embeddings(output_hidden_state):
-    if args.qwen_size == "3b":
-        text_embeddings = torch.cat(output_hidden_state["hidden_states"][0]).unsqueeze(0)
-    if args.qwen_size == "7b":
-        if use_answer:
-            text_embeddings = []
-            for hidden_states in  output_hidden_state["hidden_states"][1:]:
-                text_embeddings.append(torch.cat(hidden_states))
-            text_embeddings = torch.cat(text_embeddings,dim=1).unsqueeze(0)
-        else:
-            text_embeddings = torch.cat(output_hidden_state["hidden_states"][0]).unsqueeze(0)
+    text_embeddings = torch.stack(output_hidden_state, dim=1)
     return text_embeddings
 
 
 
-def get_qwen_inputs_embeds(videos=None, images=None, text_prompt=None, proj=qwen_proj):
-    message = [{"role": "user", "content": []}]
-    image_list = []
-    if images is not None and len(images) > 0:
-        for image in images:
-            image_input = Image.open(image).convert('RGB').resize(size=(128, 128))
-            message[0]["content"].append({"type": "image", "image": image_input})
-            image_list.append(image_input)
-    
-    if videos is not None and len(videos) > 0:
-        assert len(videos) == 1
-        video = videos[0]
-        message[0]["content"].append({
-                    "type": "video",
-                    "video": video,
-                    "max_pixels": 128 * 128,
-                    "fps": 1.0,
-                })
-        _, video_inputs = process_vision_info(message)
+def get_internvl_inputs_embeds(videos=None, images=None, text_prompt=None, proj=internvl1b_proj):
 
-    if videos is None:
-        video_inputs = None
-             
+    Instructions = {"Text input":text_prompt,"Instruction editing description":"no"}
+    generation_config = dict(max_new_tokens=1024, do_sample=True)
+    if images is not None:
+        assert len(images) == 1
+        image = Image.open(images[0]).convert('RGB').resize((128,128))
+        pixel_values = load_image(image)     
+    else:
+        pixel_values = None
 
-    if text_prompt is not None:
-        message[0]["content"].append({"type": "text", "text": text_prompt})
-    
-    prompt = qwen_processor.apply_chat_template(message, tokenize=False, add_generation_prompt=True)
+    pixel_values,input_ids,attention_mask = gene_token(internvl_tokenizer, pixel_values, str(Instructions), generation_config)
 
-    inputs = qwen_processor(
-    text=[prompt],
-    images=None if len(image_list) == 0 else image_list,
-    videos= video_inputs,
-    padding="max_length",
-    max_length=512, 
-    truncation=True, 
-    return_tensors="pt",
-    
-    ).to(device)
+    output_hidden_state_all = internvl_encoder.generate(
+            pixel_values=pixel_values.to(device).to(torch.bfloat16) if images is not None else None,
+            # pixel_values = None,
+            input_ids=input_ids.to(device),
+            attention_mask=attention_mask.to(device),
+        )
+    text_embeddings = get_text_embeddings(output_hidden_state_all)
+    pooled_prompt_embeds,prompt_embeds = proj(text_embeddings)
 
-    output_hidden_state = qwen_encoder.generate(**inputs, max_new_tokens=128,output_hidden_states=True,return_dict_in_generate=True)
-
-    text_embeddings = get_text_embeddings(output_hidden_state)
-    pooled_prompt_embeds, prompt_embeds = proj(text_embeddings)
     return pooled_prompt_embeds, prompt_embeds
 
 
+
 @torch.no_grad()
-def generate(pooled_prompt_embeds, prompt_embeds, outputs, filename, seed=None, height=1024, width=1024):
+def generate(pooled_prompt_embeds, prompt_embeds, outputs, filename, seed=1, height=1024, width=1024):
     os.makedirs(outputs, exist_ok=True)
 
     if seed is not None:
@@ -233,7 +241,7 @@ def text2image(outputs=outputs):
     for index, prompt_dict in enumerate(prompts):
         for key, prompt in prompt_dict.items():
             for i in range(num_gen_imgs):
-                pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(text_prompt=prompt)
+                pooled_prompt_embeds, prompt_embeds = get_internvl_inputs_embeds(text_prompt=prompt)
                 generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"{index}_{key}_{i}")
 
 
@@ -242,17 +250,13 @@ def image2image(outputs=outputs):
     os.makedirs(outputs, exist_ok=True)
 
     for i in range(num_gen_imgs):
-        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(images=["./data/image/sea_moon.jpg"])
+        pooled_prompt_embeds, prompt_embeds = get_internvl_inputs_embeds(images=["./data/image/sea_moon.jpg"])
         generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"sea_moon_{i}")
 
-        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(images=["./data/image/Sailor_Moon.jpg"])
+        pooled_prompt_embeds, prompt_embeds = get_internvl_inputs_embeds(images=["./data/image/Sailor_Moon.jpg"])
         generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"Sailor_Moon_{i}")
 
-        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(images=["./data/image/dog.jpg", "./data/image/hat.jpg"])
-        generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"dog_hat_{i}")
 
-        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(images=["./data/image/dog2.jpg", "./data/image/duck.jpg", "./data/image/glasses.jpg", "./data/image/background.png"])
-        generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"dog2_duck_glasses_background_{i}")
 
 
 def imagetext2image(outputs=outputs):
@@ -260,60 +264,27 @@ def imagetext2image(outputs=outputs):
     os.makedirs(outputs, exist_ok=True)
 
     for i in range(num_gen_imgs):
-        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(images=["./data/image/yarn_ball.jpg"], text_prompt="Refer to the image style and generate a cute giant panda")
+        pooled_prompt_embeds, prompt_embeds = get_internvl_inputs_embeds(images=["./data/image/yarn_ball.jpg"], text_prompt="Refer to the image style and generate a cute giant panda")
         generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"yarn_ball_panda_{i}")
 
         for emoji in ["laugh out loud", "sad", "smile"]:
-            pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(images=["./data/image/man.jpg"], text_prompt=f"Make the person in the picture {emoji}")
+            pooled_prompt_embeds, prompt_embeds = get_internvl_inputs_embeds(images=["./data/image/man.jpg"], text_prompt=f"Make the person in the picture {emoji}")
             generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"man_{emoji}_{i}")
 
-        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(images=["./data/image/hutong.jpg"], text_prompt="Add a car in the picture")
+        pooled_prompt_embeds, prompt_embeds = get_internvl_inputs_embeds(images=["./data/image/hutong.jpg"], text_prompt="Add a car in the picture")
         generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"hutong_car_{i}")
 
-        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(images=["./data/image/berry_bowl.jpg"], text_prompt="A berry_bowl with a blue house in the background.")
+        pooled_prompt_embeds, prompt_embeds = get_internvl_inputs_embeds(images=["./data/image/berry_bowl.jpg"], text_prompt="A berry_bowl with a blue house in the background.")
         generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"berry_bowl_house_{i}")
 
-        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(images=["./data/image/dog2.jpg", "./data/image/backpack.jpg"], text_prompt="with the Eiffel Tower in the background.")
-        generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"dog2_backpack_Eiffel_Tower_{i}")
 
-        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(images=["./data/image/ocr.png"], text_prompt="OCR text recognition.")
+        pooled_prompt_embeds, prompt_embeds = get_internvl_inputs_embeds(images=["./data/image/ocr.png"], text_prompt="OCR text recognition.")
         generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"ocr_{i}")
 
 
-def video2image(outputs=outputs):
-    outputs = os.path.join(outputs, "video2image")
-    os.makedirs(outputs, exist_ok=True)
 
-    for i in range(num_gen_imgs):
-        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(videos=["./data/video/particle_collision.mp4"])
-        generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"sea_moon_{i}")
-
-        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(videos=["./data/video/mixkit-paper.mp4"])
-        generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"mixkit-paper_{i}")
-
-        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(videos=["./data/video/Skiing.mp4"])
-        generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"Skiing_{i}")
-
-
-
-
-def x2image(outputs=outputs):
-    outputs = os.path.join(outputs, "x2image")
-    os.makedirs(outputs, exist_ok=True)
-
-    for i in range(num_gen_imgs):
-        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(images=["./data/image/Sanxingdui.jpg"], text_prompt="In the abandoned cyberpunk ruins, a mysterious symbiotic relationship has been established between nanobots and humans. These nanobots zip back and forth through the dilapidated buildings, repairing the decaying parts of the city, while humans, by merging with the nanobots, gain extraordinary abilities. In this sci-fi world, a dazzling yet perilous new ecosystem is created, captivating people in the fantasies of the future.")
-        generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"Sanxingdui_Mechanical_operation_{i}")
-
-        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(images=["./data/image/Shuimohua.jpg"])
-        generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"Shuimohua_Moonlight_Sonata_{i}")
-
-        pooled_prompt_embeds, prompt_embeds = get_qwen_inputs_embeds(videos=["./data/video/particle_collision.mp4"])
-        generate(pooled_prompt_embeds, prompt_embeds, outputs=outputs, filename=f"particle_collision_Electronic_music_{i}")
 
         
-
-
 if __name__ == "__main__":
     if task in ["all", "text2image"]:
         text2image()
@@ -321,10 +292,7 @@ if __name__ == "__main__":
         image2image()
     if task in ["all", "imagetext2image"]:
         imagetext2image()
-    if task in ["all", "video2image"]:
-        video2image()
-    if task in ["all", "x2image"]:
-        x2image()
+
 
     
     

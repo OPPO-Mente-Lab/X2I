@@ -78,6 +78,7 @@ X2I provides inference scripts for **QwenVL**, **InternVL**, and **MiniCPM** fra
 
 All scripts follow analogous command patterns. Simply replace the script filename while maintaining consistent parameter configurations.
 ```shell
+$ cd infer
 $ python inference_minicpm.py
 ```
 
@@ -176,16 +177,24 @@ Then you can run:
 
    - **For MiniCPM training**  
      ```shell
+     cd train
      bash train_minicpm.sh
      ```
 
    - **For QwenVL training**  
      ```shell
+     cd train
      bash train_qwenvl.sh
      ```
 
    - **For InternVL training**  
      ```shell
+     cd train
+     bash train_internvl.sh
+     ```
+   - **For LightControl training**  
+     ```shell
+     cd lightcontrol
      bash train_internvl.sh
      ```
 ## Acknowledgements 

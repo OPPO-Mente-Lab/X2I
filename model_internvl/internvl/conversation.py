@@ -335,7 +335,7 @@ def get_conv_template(name: str) -> Conversation:
 # Both Hermes-2 and internlm2-chat are chatml-format conversation templates. The difference
 # is that during training, the preprocessing function for the Hermes-2 template doesn't add
 # <s> at the beginning of the tokenized sequence, while the internlm2-chat template does.
-# Therefore, they are completely equivalent during inference.
+# Therefore, they are completely equivalent during infer.
 register_conv_template(
     Conversation(
         name='Hermes-2',
