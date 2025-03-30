@@ -37,7 +37,7 @@ from diffusers.training_utils import compute_density_for_timestep_sampling, comp
 from diffusers.utils import get_peft_kwargs,get_adapter_name
 from diffusers import FluxControlNetPipeline, FluxControlNetModel
 
-from utils.proj import create_proj3
+from utils.proj import create_proj3_qwen7b
 from .lightcontrol_flux import FluxTransformer2DModel,ControlNeXtModel
 from utils.datamodule_lightcontrol import DataModuleCustom
 
@@ -504,7 +504,7 @@ def main(args):
     tokenizer_t5 = AutoProcessor.from_pretrained(paths, trust_remote_code=True, use_fast=False)
     text_encoder_t5 = Qwen2_5_VLForConditionalGeneration.from_pretrained(paths, torch_dtype=torch.bfloat16)
 
-    proj_t5 = create_proj3(in_channels=29, use_t5=False, use_scale=False, use_cnn=True).to(dtype=weight_dtype)
+    proj_t5 = create_proj3_qwen7b(in_channels=29, use_t5=False, use_scale=False, use_cnn=True).to(dtype=weight_dtype)
     proj_t5_save_path = "/mnt/data/group/majian/flux/result_fit_speed/qwenvl25_dev_norm/54000/diffusion_pytorch_model.bin"
     state_dict = torch.load(proj_t5_save_path, map_location="cpu")
     state_dict_new = {}
