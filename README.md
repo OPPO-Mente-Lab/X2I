@@ -195,7 +195,7 @@ Then you can run:
    - **For LightControl training**  
      ```shell
      cd lightcontrol
-     bash train_internvl.sh
+     bash train_lightcontrol.sh
      ```
 ## Acknowledgements 
 This code is builds on the code from the [diffusers](https://github.com/huggingface/diffusers), 
